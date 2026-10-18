@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kaaba Zenith Beam</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed 3D canvas, readout card top-left, control bar bottom. Single dark "night sky" look. */
+:root{
+  --bg:#05070d; --panel:rgba(10,14,24,.82); --line:rgba(150,170,210,.22);
+  --fg:#e6ebf5; --muted:#94a0b8; --beam:#ff5c7a; --gold:#ffd166; --cyan:#6fd3ff;
+  --display:'Fraunces',Georgia,serif; --body:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));box-sizing:border-box}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+#labels{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.lb{position:absolute;font:11px var(--mono);color:var(--muted);white-space:nowrap;transform:translate(8px,-50%);text-shadow:0 0 4px #000}
+.lb.k{color:var(--beam);font-weight:500}.lb.s{color:var(--gold)}.lb.e{color:var(--cyan)}
+#panel{position:fixed;top:max(12px,env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));width:min(310px,calc(100% - 32px));
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;backdrop-filter:blur(8px);box-sizing:border-box}
+h1{font:500 20px/1.15 var(--display);margin:0 0 2px;text-wrap:balance}
+.sub{font-size:12px;color:var(--muted);margin:0 0 10px}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:12.5px}
+dt{color:var(--muted)}dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;min-width:0}
+dd.hot{color:var(--beam)}
+#bar{position:fixed;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;backdrop-filter:blur(8px)}
+button,select,input{font:13px var(--body);color:var(--fg);background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:6px;padding:6px 10px;min-height:32px}
+button{cursor:pointer}button:hover{background:rgba(255,255,255,.14)}
+button.on{background:var(--beam);border-color:var(--beam);color:#1a0509}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.grp{display:flex;gap:4px}
+.hint{font-size:11px;color:var(--muted);flex-basis:100%}
+details{margin-top:10px;font-size:11.5px;color:var(--muted)}summary{cursor:pointer;color:var(--fg)}details ul{margin:6px 0 0;padding-left:16px;display:grid;gap:4px}
+#panel{max-height:calc(100% - 130px);overflow-y:auto}
+#year{position:fixed;top:max(12px,env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));width:min(440px,calc(100% - 32px));max-height:calc(100% - 130px);overflow-y:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;backdrop-filter:blur(8px);box-sizing:border-box}
+#year h2{font:500 16px/1.2 var(--display);margin:0 0 8px}
+#year .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:8px}
+#yc{width:100%;height:210px;display:block}
+#ylist{font:11.5px/1.7 var(--mono);color:var(--muted);margin-top:8px;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0 12px}
+#ylist b{color:var(--fg);font-weight:500}
+.key{font-size:11px;color:var(--muted);margin-top:6px}
+@media(max-width:640px){#panel{font-size:12px}dl{font-size:11.5px}.hint{display:none}
+  #year{top:auto;bottom:calc(max(12px,env(safe-area-inset-bottom,0px)) + 112px);max-height:44%}#panel dl{grid-template-columns:auto 1fr}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas><div id="labels"></div>
+<div id="panel">
+  <h1 id="ptitle">Kaaba zenith beam</h1>
+  <p class="sub" id="psub">21.4225° N, 39.8262° E · straight up, into space</p>
+  <dl>
+    <dt>UTC</dt><dd id="o-utc"></dd>
+    <dt>Sidereal angle</dt><dd id="o-gmst"></dd>
+    <dt>Earth–Sun</dt><dd id="o-dist"></dd>
+    <dt>Orbital speed</dt><dd id="o-vel"></dd>
+    <dt>Spin speed here</dt><dd id="o-spin"></dd>
+    <dt>Beam RA (of date)</dt><dd id="o-ra" class="hot"></dd>
+    <dt>Beam Dec (of date)</dt><dd id="o-dec" class="hot"></dd>
+    <dt>RA / Dec (J2000)</dt><dd id="o-j"></dd>
+    <dt>Ecliptic lon / lat (J2000)</dt><dd id="o-ecl"></dd>
+    <dt>Nearest bright star</dt><dd id="o-star"></dd>
+    <dt>Sun at site</dt><dd id="o-sun"></dd>
+    <dt>Moon distance</dt><dd id="o-mdist"></dd>
+    <dt>Moon phase</dt><dd id="o-mphase"></dd>
+    <dt>Moon at site</dt><dd id="o-malt"></dd>
+  </dl>
+  <details><summary>What is modelled</summary>
+    <ul>
+      <li>Orbit: JPL Keplerian elements of the Earth–Moon barycentre, with the slow inclination drift. Earth itself circles that point, pulled by the Moon.</li>
+      <li>Moon: lunar theory with the main 32 longitude, 14 latitude and distance terms (about 0.1° accuracy), its 5° tilted and 27.3-day orbit, near side always facing Earth, and phases from real sunlight. Moon altitude includes parallax from your site.</li>
+      <li>Orientation: sidereal time, IAU 1976 precession and 4-term nutation, so the axis moves against the stars.</li>
+      <li>Shape: WGS84 ellipsoid. The beam leaves along the ellipsoid normal at the site's altitude.</li>
+      <li>Stars: J2000 positions, shown on a far sphere. Read the angles, not the sphere's distance.</li>
+      <li>Left out: aberration (up to 20.5″), polar motion and UT1−UTC (about 13″), deflection of the vertical, star motion.</li>
+      <li>Beam direction should be good to a few arcseconds. Exaggerated sizes, the Moon's distance and the orbit shape are display choices; Kaaba sky view uses true sizes.</li>
+    </ul></details>
+</div>
+<div id="year" hidden>
+  <h2 id="yh">Whole year</h2>
+  <div class="row"><label for="ytime">Clock time</label><input type="time" id="ytime" value="00:00">
+    <select id="yclock" aria-label="Clock type"><option value="local">local mean solar</option><option value="utc">same UTC moment</option></select>
+    <label for="ycmp">Compare</label><select id="ycmp"></select></div>
+  <canvas id="yc"></canvas>
+  <div class="key" id="ykey"></div>
+  <div id="ylist"></div>
+</div>
+<div id="bar">
+  <label>Place <select id="place"></select></label>
+  <span id="cust" hidden><input type="number" id="clat" step="0.0001" min="-90" max="90" value="21.4225" aria-label="Latitude" style="width:92px"> <input type="number" id="clon" step="0.0001" min="-180" max="180" value="39.8262" aria-label="Longitude" style="width:98px"></span>
+  <button id="yearBtn">Year view</button>
+  <button id="scaleBtn" title="Real sizes make Earth and the Sun almost invisible in the orbit view">Sizes exaggerated</button>
+  <button id="shapeBtn" class="on" title="Real eccentricity is 0.0167, too small to see">Orbit shape ×10</button>
+  <div class="grp" id="views">
+    <button data-v="earth" class="on">Earth</button><button data-v="orbit">Orbit</button><button data-v="sky">Kaaba sky</button>
+  </div>
+  <button id="play">Pause</button>
+  <label>Speed <select id="speed">
+    <option value="1">Real time</option><option value="600">10 min/s</option><option value="3600" selected>1 hour/s</option>
+    <option value="21600">6 hours/s</option><option value="86400">1 day/s</option><option value="864000">10 days/s</option></select></label>
+  <input type="datetime-local" id="dt" aria-label="Date and time (UTC)">
+  <button id="now">Now</button>
+  <span class="hint">Drag to orbit, scroll to zoom. Date field is UTC.</span>
+</div>
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const D2R=Math.PI/180, AS=Math.PI/648000;
+let LAT=21.4225*D2R,LON=39.8262*D2R,ALT=277,PLACE='Kaaba';
+const RE=0.03,SUNR=0.05,SKY=500;
+const AU=1.495978707e11,TRUE_RE=6378137/AU,TRUE_SUN=695700000/AU;
+const WA=6378137,WF=1/298.257223563,WE2=WF*(2-WF);
+const mod=(a,n)=>((a%n)+n)%n;
+
+// ---- small matrix helpers (frame rotations, as in SOFA) ----
+const rot1=a=>{const c=Math.cos(a),s=Math.sin(a);return [[1,0,0],[0,c,s],[0,-s,c]];};
+const rot2=a=>{const c=Math.cos(a),s=Math.sin(a);return [[c,0,-s],[0,1,0],[s,0,c]];};
+const rot3=a=>{const c=Math.cos(a),s=Math.sin(a);return [[c,s,0],[-s,c,0],[0,0,1]];};
+const mm=(A,B)=>A.map(r=>[0,1,2].map(j=>r[0]*B[0][j]+r[1]*B[1][j]+r[2]*B[2][j]));
+const mv=(A,v)=>A.map(r=>r[0]*v[0]+r[1]*v[1]+r[2]*v[2]);
+const tr=A=>[0,1,2].map(i=>[0,1,2].map(j=>A[j][i]));
+
+// ---- frames: everything lives in the J2000 ecliptic (scene y = ecliptic north) ----
+const EPS0=84381.406*AS, SE=Math.sin(EPS0), CE=Math.cos(EPS0);
+const e2t=v=>new THREE.Vector3(v[0],-v[1]*SE+v[2]*CE,-(v[1]*CE+v[2]*SE)); // J2000 equatorial -> scene
+function radec(ra,dec,r=1){return e2t([Math.cos(dec)*Math.cos(ra),Math.cos(dec)*Math.sin(ra),Math.sin(dec)]).multiplyScalar(r);}
+function raDec(v){const ey=-v.z,ez=v.y,y=ey*CE-ez*SE,z=ey*SE+ez*CE;return {ra:mod(Math.atan2(y,v.x)/D2R,360),dec:Math.asin(z/Math.hypot(v.x,y,z))/D2R};}
+
+// ---- Earth's orbit: JPL Keplerian elements for the Earth-Moon barycentre (J2000 ecliptic) ----
+const KEP={a:[1.00000261,0.00000562],e:[0.01671123,-0.00004392],I:[-0.00001531,-0.01294668],L:[100.46457166,35999.37244981],w:[102.93768193,0.32327364]};
+const kv=(k,T)=>k[0]+k[1]*T;
+function kepler(T){
+  const a=kv(KEP.a,T),e=kv(KEP.e,T),I=kv(KEP.I,T)*D2R,w=kv(KEP.w,T)*D2R,L=kv(KEP.L,T)*D2R;
+  const M=mod(L-w+Math.PI,2*Math.PI)-Math.PI;let E=M+e*Math.sin(M);
+  for(let i=0;i<8;i++)E-=(E-e*Math.sin(E)-M)/(1-e*Math.cos(E));
+  const xp=a*(Math.cos(E)-e),yp=a*Math.sqrt(1-e*e)*Math.sin(E),r=Math.hypot(xp,yp);
+  const u=Math.sin(w)*xp+Math.cos(w)*yp;
+  return {a,e,r,E:new THREE.Vector3(Math.cos(w)*xp-Math.sin(w)*yp,Math.sin(I)*u,-Math.cos(I)*u)};
+}
+// ---- Earth orientation: sidereal time, IAU-1976 precession, nutation (4 terms) ----
+function astro(ms){
+  const d=ms/86400000+2440587.5-2451545.0,T=d/36525;
+  const gmst=mod(280.46061837+360.98564736629*d+0.000387933*T*T-T*T*T/38710000,360);
+  const zeta=(2306.2181*T+0.30188*T*T+0.017998*T**3)*AS,zz=(2306.2181*T+1.09468*T*T+0.018203*T**3)*AS,th=(2004.3109*T-0.42665*T*T-0.041833*T**3)*AS;
+  const P=mm(rot3(-zz),mm(rot2(th),rot3(-zeta)));
+  const eps=(84381.406-46.836769*T-0.0001831*T*T)*AS;
+  const Om=(125.04452-1934.136261*T)*D2R,Ls=(280.4665+36000.7698*T)*D2R,Lm=(218.3165+481267.8813*T)*D2R;
+  const dpsi=(-17.20*Math.sin(Om)-1.32*Math.sin(2*Ls)-0.23*Math.sin(2*Lm)+0.21*Math.sin(2*Om))*AS;
+  const deps=(9.20*Math.cos(Om)+0.57*Math.cos(2*Ls)+0.10*Math.cos(2*Lm)-0.09*Math.cos(2*Om))*AS;
+  const N=mm(rot1(-(eps+deps)),mm(rot3(-dpsi),rot1(eps)));
+  const gast=gmst*D2R+dpsi*Math.cos(eps+deps);
+  const k=kepler(T);
+  return {d,T,gast,gastDeg:mod(gast/D2R,360),M:tr(mm(N,P)),r:k.r,a:k.a,E:k.E};
+}
+function orient(a){const g=a.gast,ex=e2t(mv(a.M,[Math.cos(g),Math.sin(g),0])),ey=e2t(mv(a.M,[0,0,1])),ez=new THREE.Vector3().crossVectors(ex,ey);
+  return {ex,ey,ez,m:new THREE.Matrix4().makeBasis(ex,ey,ez)};}
+// ---- Moon: truncated Meeus ch.47 series (main periodic terms), geocentric, J2000 ecliptic ----
+const MT=[[0,0,1,0,6288774,-20905355],[2,0,-1,0,1274027,-3699111],[2,0,0,0,658314,-2955968],[0,0,2,0,213618,-569925],[0,1,0,0,-185116,48888],[0,0,0,2,-114332,-3149],[2,0,-2,0,58793,246158],[2,-1,-1,0,57066,-152138],[2,0,1,0,53322,-170733],[2,-1,0,0,45758,-204586],[0,1,-1,0,-40923,-129620],[1,0,0,0,-34720,108743],[0,1,1,0,-30383,104755],[2,0,0,-2,15327,10321],[0,0,1,2,-12528,0],[0,0,1,-2,10980,79661],[4,0,-1,0,10675,-34782],[0,0,3,0,10034,-23210],[4,0,-2,0,8548,-21636],[2,1,-1,0,-7888,24208],[2,1,0,0,-6766,30824],[1,0,-1,0,-5163,-8379],[1,1,0,0,4987,-16675],[2,-1,1,0,4036,-12831],[2,0,2,0,3994,-10445],[4,0,0,0,3861,-11650],[2,0,-3,0,3665,14403],[0,1,-2,0,-2689,-7003],[2,0,-1,2,-2602,0],[2,-1,-2,0,2390,10056],[1,0,1,0,-2348,6322],[2,-2,0,0,2236,-9884]];
+const MB=[[0,0,0,1,5128122],[0,0,1,1,280602],[0,0,1,-1,277693],[2,0,0,-1,173237],[2,0,-1,1,55413],[2,0,-1,-1,46271],[2,0,0,1,32573],[0,0,2,1,17198],[2,0,1,-1,9266],[0,0,2,-1,8822],[2,-1,0,-1,8216],[2,0,-2,-1,4324],[2,0,1,1,4200],[2,1,0,-1,-3359]];
+function moonGeo(T){
+  const q=Math.PI/180,sn=x=>Math.sin(x*q);
+  const Lp=218.3164477+481267.88123421*T,D=297.8501921+445267.1114034*T,M=357.5291092+35999.0502909*T,Mp=134.9633964+477198.8675055*T,F=93.2720950+483202.0175233*T;
+  const E=1-0.002516*T-0.0000074*T*T;let sl=0,sr=0,sb=0;
+  const ef=m=>Math.abs(m)===1?E:Math.abs(m)===2?E*E:1;
+  for(const [d,m,mp,f,l,rr] of MT){const g=(d*D+m*M+mp*Mp+f*F)*q,e=ef(m);sl+=l*e*Math.sin(g);sr+=rr*e*Math.cos(g);}
+  for(const [d,m,mp,f,b] of MB){sb+=b*ef(m)*Math.sin((d*D+m*M+mp*Mp+f*F)*q);}
+  const A1=119.75+131.849*T,A2=53.09+479264.290*T,A3=313.45+481266.484*T;
+  sl+=3958*sn(A1)+1962*sn(Lp-F)+318*sn(A2);
+  sb+=-2235*sn(Lp)+382*sn(A3)+175*sn(A1-F)+175*sn(A1+F)+127*sn(Lp-Mp)-115*sn(Lp+Mp);
+  const lam=(Lp+sl/1e6-1.3969713*T)*q,bet=sb/1e6*q,dist=385000.56+sr/1000;
+  const x=dist*Math.cos(bet)*Math.cos(lam),y=dist*Math.cos(bet)*Math.sin(lam),z=dist*Math.sin(bet);
+  return {v:new THREE.Vector3(x,z,-y),dist};
+}
+// ---- WGS84 ellipsoid: surface point and outward normal (geodetic latitude = GPS latitude) ----
+const localOf=(lat,lon)=>new THREE.Vector3(Math.cos(lat)*Math.cos(lon),Math.sin(lat),-Math.cos(lat)*Math.sin(lon));
+function surf(lat,lon,h){const s=Math.sin(lat),N=1/Math.sqrt(1-WE2*s*s),hh=h/WA,x=(N+hh)*Math.cos(lat);
+  return new THREE.Vector3(x*Math.cos(lon),(N*(1-WE2)+hh)*s,-x*Math.sin(lon)).multiplyScalar(RE);}
+
+// ---- stars [name, RA h, Dec deg] (J2000) ----
+const STARS=[["Sirius",6.752,-16.716],["Canopus",6.399,-52.696],["Arcturus",14.261,19.182],["Vega",18.616,38.784],["Capella",5.278,45.998],["Rigel",5.242,-8.202],["Procyon",7.655,5.225],["Betelgeuse",5.919,7.407],["Altair",19.846,8.868],["Aldebaran",4.599,16.509],["Antares",16.490,-26.432],["Spica",13.420,-11.161],["Pollux",7.755,28.026],["Fomalhaut",22.961,-29.622],["Deneb",20.690,45.280],["Regulus",10.139,11.967],["Castor",7.577,31.888],["Polaris",2.530,89.264],["Hamal",2.120,23.462],["Alphard",9.460,-8.659],["Dubhe",11.062,61.751],["Algol",3.136,40.956],["Mirfak",3.405,49.861],["Alpheratz",0.139,29.090],["Markab",23.079,15.205],["Enif",21.736,9.875],["Rasalhague",17.582,12.560],["Kochab",14.845,74.156],["Alnilam",5.604,-1.202],["Denebola",11.818,14.572],["Shaula",17.560,-37.104],["Acrux",12.443,-63.099],["Hadar",14.064,-60.373],["Menkar",3.038,4.090],["Sadr",20.370,40.257],["Albireo",19.512,27.960],["Nunki",18.921,-26.297],["Alphecca",15.578,26.715],["Alderamin",21.310,62.586],["Schedar",0.675,56.537],["Mizar",13.399,54.925],["Elnath",5.438,28.608],["Bellatrix",5.419,6.350],["Alhena",6.628,16.399]];
+
+// ---- scene ----
+const $=id=>document.getElementById(id);
+const canvas=$('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,logarithmicDepthBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x05070d);
+const camera=new THREE.PerspectiveCamera(50,1,0.0003,6000);
+const controls=new THREE.OrbitControls(camera,canvas); controls.enableDamping=true; controls.dampingFactor=.08;
+scene.add(new THREE.AmbientLight(0x8899bb,.35));
+const sunLight=new THREE.PointLight(0xfff2d8,1.9,0,0); scene.add(sunLight);
+const sun=new THREE.Mesh(new THREE.SphereGeometry(SUNR,32,16),new THREE.MeshBasicMaterial({color:0xffd166})); scene.add(sun);
+
+function dotTex(){const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');
+  const g=x.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,'#fff');g.addColorStop(0.85,'#fff');g.addColorStop(1,'rgba(255,255,255,0)');
+  x.fillStyle=g;x.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);}
+const dot=dotTex();
+function pointSet(pos,color,size,vis=true){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  const p=new THREE.Points(g,new THREE.PointsMaterial({color,size,sizeAttenuation:false,map:dot,transparent:true,depthTest:false}));p.frustumCulled=false;p.visible=vis;p.renderOrder=8;scene.add(p);return p;}
+
+{ const n=2500,p=new Float32Array(n*3);
+  for(let i=0;i<n;i++){const u=Math.random()*2-1,t=Math.random()*6.2832,s=Math.sqrt(1-u*u);p[i*3]=s*Math.cos(t)*SKY;p[i*3+1]=u*SKY;p[i*3+2]=s*Math.sin(t)*SKY;}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0x9aa8c8,size:1.6,sizeAttenuation:false,map:dot,transparent:true,depthWrite:false})));
+  const bp=[];STARS.forEach(s=>{const v=radec(s[1]*15*D2R,s[2]*D2R,SKY);bp.push(v.x,v.y,v.z);});
+  const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(bp,3));
+  scene.add(new THREE.Points(bg,new THREE.PointsMaterial({color:0xffffff,size:4.5,sizeAttenuation:false,map:dot,transparent:true,depthWrite:false})));
+}
+function ring(pts,color,op){const g=new THREE.BufferGeometry().setFromPoints(pts);const l=new THREE.LineLoop(g,new THREE.LineBasicMaterial({color,transparent:true,opacity:op}));l.frustumCulled=false;scene.add(l);return l;}
+const eqPts=[],eclPts=[];
+for(let i=0;i<360;i++){const a=i*D2R;eqPts.push(radec(a,0,SKY));eclPts.push(new THREE.Vector3(Math.cos(a)*SKY,0,-Math.sin(a)*SKY));}
+ring(eqPts,0x6fd3ff,.28); const decRing=ring(eqPts,0xff5c7a,.85); ring(eclPts,0xffd166,.22);
+let ringMs=null;
+function rebuildRing(a){const pts=[],ca=Math.cos(LAT),sa=Math.sin(LAT);
+  for(let i=0;i<360;i++){const al=i*D2R;pts.push(e2t(mv(a.M,[ca*Math.cos(al),ca*Math.sin(al),sa])).multiplyScalar(SKY));}
+  decRing.geometry.setFromPoints(pts);ringMs=simMs;}
+
+// orbit (optionally exaggerated eccentricity) and seasonal markers
+let ORB_K=10,SC=1;const rad=R=>1+ORB_K*(R-1);
+const ECC_E=0.01671123,ECC_A=1.00000261,PERI=102.93768193*D2R;
+function orbitInfo(){
+  const at=l=>{const nu=l-PERI,r=ECC_A*(1-ECC_E**2)/(1+ECC_E*Math.cos(nu));return new THREE.Vector3(rad(r)*Math.cos(l),0,-rad(r)*Math.sin(l));};
+  const pts=[];for(let i=0;i<360;i++)pts.push(at(PERI+i*D2R));
+  const names=[['Perihelion',PERI],['Aphelion',PERI+Math.PI],['March equinox',Math.PI],['June solstice',1.5*Math.PI],['September equinox',0],['December solstice',0.5*Math.PI]];
+  return {pts,marks:names.map(([name,l])=>({name,pos:at(l)}))};
+}
+let oi=orbitInfo();
+const orbit=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(oi.pts),new THREE.LineBasicMaterial({color:0x4a5878,transparent:true,opacity:.7}));orbit.frustumCulled=false;scene.add(orbit);
+const orbMarkPts=pointSet(oi.marks.flatMap(m=>[m.pos.x,m.pos.y,m.pos.z]),0x8fa0c4,7);
+
+// Earth group (orientation + scale set every frame)
+const earth=new THREE.Group(); earth.matrixAutoUpdate=false; scene.add(earth);
+const ball=new THREE.Mesh(new THREE.SphereGeometry(RE,64,32),new THREE.MeshPhongMaterial({color:0x2b5f9e,shininess:12}));
+ball.scale.y=1-WF;earth.add(ball);
+new THREE.TextureLoader().setCrossOrigin('anonymous').load('https://cdn.jsdelivr.net/npm/three-globe@2.31.0/example/img/earth-blue-marble.jpg',t=>{ball.material.map=t;ball.material.color.set(0xffffff);ball.material.needsUpdate=true;},undefined,()=>{});
+{ const seg=[],k=RE*1.002;
+  for(let lat=-60;lat<=60;lat+=30){const la=lat*D2R;for(let i=0;i<72;i++){const a=i/72*6.2832,b=(i+1)/72*6.2832;
+    seg.push(k*Math.cos(la)*Math.cos(a),k*Math.sin(la),-k*Math.cos(la)*Math.sin(a),k*Math.cos(la)*Math.cos(b),k*Math.sin(la),-k*Math.cos(la)*Math.sin(b));}}
+  for(let lon=0;lon<360;lon+=30){const lo=lon*D2R;for(let i=-18;i<18;i++){const a=i*5*D2R,b=(i+1)*5*D2R;
+    seg.push(k*Math.cos(a)*Math.cos(lo),k*Math.sin(a),-k*Math.cos(a)*Math.sin(lo),k*Math.cos(b)*Math.cos(lo),k*Math.sin(b),-k*Math.cos(b)*Math.sin(lo));}}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(seg,3));
+  const grat=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.12}));grat.scale.y=1-WF;earth.add(grat);
+  const ax=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-RE*1.7,0),new THREE.Vector3(0,RE*1.7,0)]);
+  earth.add(new THREE.Line(ax,new THREE.LineBasicMaterial({color:0x6fd3ff,transparent:true,opacity:.8})));
+}
+const localDir=localOf(LAT,LON),surfLocal=surf(LAT,LON,ALT);
+const kaaba=new THREE.Mesh(new THREE.SphereGeometry(RE*0.05,12,8),new THREE.MeshBasicMaterial({color:0xffffff}));
+kaaba.position.copy(surfLocal);earth.add(kaaba);
+const beam=new THREE.Group();
+const cylG=new THREE.CylinderGeometry(1,1,1,12,1,true);cylG.translate(0,.5,0);
+const core=new THREE.Mesh(cylG,new THREE.MeshBasicMaterial({color:0xff5c7a}));
+const glow=new THREE.Mesh(cylG,new THREE.MeshBasicMaterial({color:0xff5c7a,transparent:true,opacity:.22,depthWrite:false}));
+beam.add(core,glow);beam.position.copy(surfLocal);
+beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),localDir);
+earth.add(beam);
+const hitG=new THREE.BufferGeometry();hitG.setAttribute('position',new THREE.Float32BufferAttribute([0,0,0],3));
+const hit=new THREE.Points(hitG,new THREE.PointsMaterial({color:0xff5c7a,size:16,sizeAttenuation:false,map:dot,transparent:true,depthTest:false}));hit.renderOrder=9;hit.frustumCulled=false;scene.add(hit);
+const earthDot=pointSet([0,0,0],0x6fd3ff,7,false), sunDot=pointSet([0,0,0],0xffd166,10,false), moonDot=pointSet([0,0,0],0xdddddd,6,false);
+// Moon: near side (u=0.25 on the sphere) always faces Earth; Sun lights it, so the phase is real
+const MOON_R_EX=0.0082,MOON_R_TRUE=1737400/AU,MOON_D_EX=0.14,MOON_MEAN=384400,MU_EM=82.30057;
+function moonTexture(){const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');
+  x.fillStyle='#a3a3a0';x.fillRect(0,0,512,256);
+  const blob=(u,v,r,col)=>{const g=x.createRadialGradient(u,v,0,u,v,r);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(u-r,v-r,2*r,2*r);};
+  let sd=7;const rnd=()=>(sd=(sd*16807)%2147483647)/2147483647;
+  for(let i=0;i<260;i++)blob(rnd()*512,rnd()*256,6+rnd()*18,'rgba(70,70,68,'+(0.08+rnd()*0.12)+')');
+  [[100,95,34],[120,128,40],[150,100,28],[108,160,22],[170,140,26],[85,120,26]].forEach(([u,v,r])=>blob(u+0,v,r,'rgba(52,54,58,.55)'));
+  for(let i=0;i<90;i++)blob(rnd()*512,rnd()*256,2+rnd()*5,'rgba(235,235,230,.35)');
+  return new THREE.CanvasTexture(c);}
+const moon=new THREE.Mesh(new THREE.SphereGeometry(1,48,24),new THREE.MeshPhongMaterial({map:moonTexture(),shininess:2}));scene.add(moon);
+const moonPath=new THREE.LineLoop(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x9aa3b8,transparent:true,opacity:.55}));moonPath.frustumCulled=false;scene.add(moonPath);
+let pathMs=null;
+const moonVisDist=d=>SC<1?d*1000/AU:MOON_D_EX*d/MOON_MEAN;
+function rebuildMoonPath(T0){const pts=[];
+  for(let k=0;k<64;k++){const mg=moonGeo(T0+(k*27.32166/64)/36525);pts.push(mg.v.clone().normalize().multiplyScalar(moonVisDist(mg.dist)));}
+  moonPath.geometry.setFromPoints(pts);pathMs=simMs;}
+
+// labels
+const labelsEl=$('labels');
+function mkLabel(txt,cls){const e=document.createElement('div');e.className='lb '+(cls||'');e.textContent=txt;labelsEl.appendChild(e);return e;}
+const lSun=mkLabel('Sun','s'),lEarth=mkLabel('Earth','e'),lHit=mkLabel('','k'),lMoon=mkLabel('Moon');
+const orbLabels=oi.marks.map(m=>mkLabel(m.name,'e'));
+const starLabels=STARS.map(s=>mkLabel(s[0]));
+const starDirs=STARS.map(s=>radec(s[1]*15*D2R,s[2]*D2R,1));
+function place(el,v,show=true){const cam=v.clone().applyMatrix4(camera.matrixWorldInverse);
+  if(!show||cam.z>=0){el.style.display='none';return;}const p=v.clone().project(camera);
+  el.style.display='block';el.style.left=((p.x+1)/2*innerWidth)+'px';el.style.top=((1-p.y)/2*innerHeight)+'px';}
+
+// ---- state ----
+let simMs=Date.now(),playing=true,speed=3600,view='earth';
+const earthPos=new THREE.Vector3(),lastEarth=new THREE.Vector3();
+const epos=a=>a.E.clone().multiplyScalar(rad(a.r)/a.r);
+let skyForced=false;
+function setView(v){
+  if(v==='sky'&&SC===1){skyForced=true;setScale(true,true);}
+  else if(v!=='sky'&&skyForced){skyForced=false;setScale(false,true);}
+  view=v;document.querySelectorAll('#views button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  const sky=v==='sky';controls.enabled=!sky;ball.visible=!sky;beam.visible=!sky;camera.fov=sky?75:50;camera.updateProjectionMatrix();
+  if(v==='earth'){controls.minDistance=RE*SC*1.15;controls.target.copy(earthPos);camera.position.copy(earthPos).add(new THREE.Vector3(0.05,0.045,0.07).multiplyScalar(SC));camera.up.set(0,1,0);}
+  else controls.minDistance=0;
+  if(v==='orbit'){controls.target.set(0,0,0);camera.position.set(0.9,1.8,2.6);camera.up.set(0,1,0);}
+  controls.update();
+}
+function setScale(trueScale,skipView){
+  pathMs=null;
+  SC=trueScale?TRUE_RE/RE:1;sun.scale.setScalar(trueScale?TRUE_SUN/SUNR:1);
+  camera.near=trueScale?2e-8:0.0003;camera.updateProjectionMatrix();
+  earthDot.visible=sunDot.visible=moonDot.visible=trueScale;
+  $('scaleBtn').classList.toggle('on',trueScale);$('scaleBtn').textContent=trueScale?'True sizes':'Sizes exaggerated';
+  if(!skipView)setView(view);
+}
+function fmtRA(deg){const h=deg/15,hh=Math.floor(h),m=Math.floor((h-hh)*60),s=Math.round(((h-hh)*60-m)*60);
+  const tot=hh*3600+m*60+s;return `${Math.floor(tot/3600)%24}h ${String(Math.floor(tot%3600/60)).padStart(2,'0')}m ${String(tot%60).padStart(2,'0')}s`;}
+const sgn=x=>(x>=0?'+':'−')+Math.abs(x).toFixed(3)+'°';
+const GMS=2.959122082855911e-4, KMS_PER_AUD=1731.456837, OMEGA=7.292115e-5;
+function frame(){
+  const a=astro(simMs),o=orient(a);
+  const mg=moonGeo(a.T);
+  earthPos.copy(epos(a)).addScaledVector(mg.v,-1000/AU/MU_EM); // Earth orbits the Earth-Moon barycentre
+  const dE=earthPos.clone().sub(lastEarth);lastEarth.copy(earthPos);
+  if(view==='earth'){camera.position.add(dE);controls.target.add(dE);}
+  if(ringMs===null||Math.abs(simMs-ringMs)>5*86400000)rebuildRing(a);
+  earth.matrix.makeBasis(o.ex.clone().multiplyScalar(SC),o.ey.clone().multiplyScalar(SC),o.ez.clone().multiplyScalar(SC)).setPosition(earthPos);earth.updateMatrixWorld(true);
+  const dW=localDir.clone().transformDirection(earth.matrix);
+  const S=surfLocal.clone().applyMatrix4(earth.matrix);
+  const b=S.dot(dW),c=S.lengthSq()-SKY*SKY,t=-b+Math.sqrt(b*b-c);
+  const hp=S.clone().addScaledVector(dW,t);
+  const rw=(view==='earth'?0.02*RE*SC:(SC<1?0.0004:0.004))/SC;
+  core.scale.set(rw,t/SC,rw);glow.scale.set(rw*3,t/SC,rw*3);
+  hitG.attributes.position.setXYZ(0,hp.x,hp.y,hp.z);hitG.attributes.position.needsUpdate=true;
+  earthDot.geometry.attributes.position.setXYZ(0,earthPos.x,earthPos.y,earthPos.z);earthDot.geometry.attributes.position.needsUpdate=true;
+  // Moon
+  const mdir=mg.v.clone().normalize(),mpos=earthPos.clone().addScaledVector(mdir,moonVisDist(mg.dist));
+  moon.position.copy(mpos);moon.scale.setScalar(SC<1?MOON_R_TRUE:MOON_R_EX);moon.lookAt(earthPos);
+  moonPath.position.copy(earthPos);if(pathMs===null||Math.abs(simMs-pathMs)>12*3600000)rebuildMoonPath(a.T);
+  moonDot.geometry.attributes.position.setXYZ(0,mpos.x,mpos.y,mpos.z);moonDot.geometry.attributes.position.needsUpdate=true;
+  const sunG=a.E.clone().negate().normalize(),cosE=sunG.dot(mdir),elong=Math.acos(cosE)/D2R,illum=(1-cosE)/2*100;
+  const waxing=new THREE.Vector3().crossVectors(sunG,mdir).y>0;
+  const pn=elong<22.5?'new moon':elong>157.5?'full moon':(waxing?'waxing ':'waning ')+(elong<67.5?'crescent':elong<112.5?(waxing?'first quarter':'last quarter'):'gibbous');
+  const topo=mg.v.clone().multiplyScalar(1000/AU).sub(surfLocal.clone().applyMatrix4(o.m).multiplyScalar(TRUE_RE/RE)).normalize();
+  const mAlt=Math.asin(topo.dot(dW))/D2R,mSep=Math.acos(Math.min(1,topo.dot(dW)))/D2R;
+  // readouts
+  let best=0,bd=9;starDirs.forEach((s,i)=>{const ang=Math.acos(Math.min(1,s.dot(dW)));if(ang<bd){bd=ang;best=i;}});
+  const ecl=new THREE.Vector3(dW.x,-dW.z,dW.y),j=raDec(dW);
+  const sunEl=Math.asin(a.E.clone().negate().normalize().dot(dW))/D2R;
+  const sl=Math.sin(LAT),rho=WA*(1/Math.sqrt(1-WE2*sl*sl)+ALT/WA)*Math.cos(LAT);
+  $('o-utc').textContent=new Date(simMs).toISOString().slice(0,16).replace('T',' ');
+  $('o-gmst').textContent=a.gastDeg.toFixed(2)+'°';
+  $('o-dist').textContent=a.r.toFixed(5)+' AU';
+  $('o-vel').textContent=(Math.sqrt(GMS*(2/a.r-1/a.a))*KMS_PER_AUD).toFixed(2)+' km/s';
+  $('o-spin').textContent=(OMEGA*rho).toFixed(1)+' m/s';
+  $('o-ra').textContent=fmtRA(mod(a.gastDeg+LON/D2R,360));
+  $('o-dec').textContent=sgn(LAT/D2R);
+  $('o-j').textContent=fmtRA(j.ra)+' / '+sgn(j.dec);
+  $('o-ecl').textContent=mod(Math.atan2(ecl.y,ecl.x)/D2R,360).toFixed(2)+'° / '+(Math.asin(ecl.z)/D2R).toFixed(2)+'°';
+  $('o-star').textContent=STARS[best][0]+' '+(bd/D2R).toFixed(1)+'°';
+  $('o-mdist').textContent=Math.round(mg.dist).toLocaleString('en-US')+' km';
+  $('o-mphase').textContent=pn+', '+illum.toFixed(0)+'%';
+  $('o-malt').textContent=(mAlt>0?'':'below, ')+mAlt.toFixed(0)+'° alt · '+mSep.toFixed(0)+'° from beam';
+  $('o-sun').textContent=(sunEl>0?'day, ':'night, ')+sunEl.toFixed(0)+'° elev';
+  if(view==='sky'){
+    const pos=S.clone().addScaledVector(dW,RE*SC*0.001);
+    const north=o.ey.clone().addScaledVector(dW,-o.ey.dot(dW)).normalize();
+    camera.position.copy(pos);camera.up.copy(north);camera.lookAt(pos.clone().add(dW));
+  } else controls.update();
+  camera.updateMatrixWorld();camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  const sr=SC<1?TRUE_SUN:SUNR;
+  place(lSun,new THREE.Vector3(0,sr*1.3,0));
+  place(lMoon,mpos.clone().add(new THREE.Vector3(0,(SC<1?MOON_R_TRUE:MOON_R_EX)*1.4,0)));
+  place(lEarth,earthPos.clone().add(new THREE.Vector3(0,RE*SC*1.3,0)),view==='orbit');
+  oi.marks.forEach((m,i)=>place(orbLabels[i],m.pos,view==='orbit'));
+  lHit.textContent=PLACE+' beam → '+STARS[best][0]+' region';
+  place(lHit,hp,view!=='sky');
+  starLabels.forEach((el,i)=>place(el,starDirs[i].clone().multiplyScalar(SKY),Math.acos(Math.min(1,starDirs[i].dot(dW)))<(view==='sky'?0.7:0.45)));
+}
+// ---- whole-year view ----
+const yearGroup=new THREE.Group();yearGroup.visible=false;scene.add(yearGroup);
+let yearOn=false,yData=[],yYear=0,yTime='',yDay=-1;
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function buildYear(){
+  const year=new Date(simMs).getUTCFullYear(),tm=$('ytime').value||'00:00',[hh,mm]=tm.split(':').map(Number);
+  yYear=year;yTime=tm;yData=[];
+  const utcMode=$('yclock').value==='utc',cmp=PLACES.find(p=>p.n===$('ycmp').value);
+  const n=Math.round((Date.UTC(year+1,0,1)-Date.UTC(year,0,1))/86400000);
+  const segP=[],segC=[],hitP=[],hitC=[],col=new THREE.Color();
+  for(let i=0;i<n;i++){
+    const off=utcMode?0:Math.round(LON/D2R*4),ms=Date.UTC(year,0,1+i,0,hh*60+mm-off),a=astro(ms),o=orient(a);
+    let ra2=null;if(cmp){const o2=utcMode?0:Math.round(cmp.lon*4),a2=astro(Date.UTC(year,0,1+i,0,hh*60+mm-o2));
+      ra2=raDec(localOf(cmp.lat*D2R,cmp.lon*D2R).applyMatrix4(orient(a2).m)).ra;}
+    const E=epos(a),dW=localDir.clone().applyMatrix4(o.m).normalize();
+    const S=E.clone().add(surfLocal.clone().applyMatrix4(o.m).multiplyScalar(SC));
+    const b=S.dot(dW),c=S.lengthSq()-SKY*SKY,t=-b+Math.sqrt(b*b-c),hp=S.clone().addScaledVector(dW,t);
+    const sra=raDec(a.E.clone().negate()).ra;
+    col.setHSL(i/n*0.85,0.9,0.62);
+    const e=E.clone().addScaledVector(dW,0.32);
+    segP.push(S.x,S.y,S.z,e.x,e.y,e.z);segC.push(col.r,col.g,col.b,col.r,col.g,col.b);
+    hitP.push(hp.x,hp.y,hp.z);hitC.push(col.r,col.g,col.b);
+    yData.push({i,ms,ra:raDec(dW).ra,ra2,sra,dW});
+  }
+  while(yearGroup.children.length)yearGroup.remove(yearGroup.children[0]);
+  let g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(segP,3));g.setAttribute('color',new THREE.Float32BufferAttribute(segC,3));
+  const ls=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true}));ls.frustumCulled=false;yearGroup.add(ls);
+  g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(hitP,3));g.setAttribute('color',new THREE.Float32BufferAttribute(hitC,3));
+  const pts=new THREE.Points(g,new THREE.PointsMaterial({vertexColors:true,size:7,sizeAttenuation:false,map:dot,transparent:true,depthTest:false}));pts.frustumCulled=false;yearGroup.add(pts);
+  const lst=[];
+  STARS.forEach((s,k)=>{ if(Math.abs(s[2]-LAT/D2R)>10)return;
+    let best=1e9,bi=0;yData.forEach(d=>{const ang=Math.acos(Math.min(1,starDirs[k].dot(d.dW))); if(ang<best){best=ang;bi=d.i;}});
+    const dt=new Date(Date.UTC(year,0,1+bi));lst.push({name:s[0],bi,sep:best/D2R,txt:`${MON[dt.getUTCMonth()]} ${dt.getUTCDate()}`});});
+  lst.sort((a,b)=>a.bi-b.bi);
+  $('ylist').innerHTML=lst.map(l=>`<div><b>${l.name}</b> ${l.txt} · ${l.sep.toFixed(1)}°</div>`).join('');
+  $('yh').textContent=`${PLACE}, whole year ${year}`;
+  $('ykey').innerHTML=`<span style="color:var(--beam)">●</span> ${PLACE} beam right ascension (J2000) at ${tm} ${utcMode?'UTC':'local mean solar time'} &nbsp; `+(cmp?`<span style="color:#b794f6">●</span> ${cmp.n} &nbsp; `:'')+`<span style="color:var(--gold)">●</span> Sun &nbsp; dashed: stars within 10° of the beam's declination`;
+  yDay=-1;
+}
+function drawChart(){
+  const cv=$('yc'),r=cv.getBoundingClientRect(),dpr=Math.min(devicePixelRatio,2);
+  if(!r.width)return;cv.width=r.width*dpr;cv.height=r.height*dpr;
+  const x=cv.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);const W=r.width,H=r.height,L=34,R=8,T=8,B=20,n=yData.length;
+  const X=i=>L+(W-L-R)*i/(n-1),Y=h=>T+(H-T-B)*(1-h/24);
+  x.clearRect(0,0,W,H);x.font='10px IBM Plex Mono, monospace';x.textBaseline='middle';
+  x.strokeStyle='rgba(150,170,210,.15)';x.fillStyle='#94a0b8';x.lineWidth=1;
+  for(let h=0;h<=24;h+=6){x.beginPath();x.moveTo(L,Y(h));x.lineTo(W-R,Y(h));x.stroke();x.textAlign='right';x.fillText(h+'h',L-5,Y(h));}
+  x.textAlign='center';for(let m=0;m<12;m++){const di=Math.round((Date.UTC(yYear,m,1)-Date.UTC(yYear,0,1))/86400000);x.fillText(MON[m][0],X(di+15),H-8);
+    x.beginPath();x.moveTo(X(di),T);x.lineTo(X(di),H-B);x.stroke();}
+  x.setLineDash([3,3]);x.textAlign='right';
+  STARS.forEach(s=>{if(Math.abs(s[2]-LAT/D2R)>10)return;x.strokeStyle='rgba(111,211,255,.45)';x.beginPath();x.moveTo(L,Y(s[1]));x.lineTo(W-R,Y(s[1]));x.stroke();
+    x.fillStyle='#6fd3ff';x.fillText(s[0],W-R-2,Y(s[1])-6);});
+  x.setLineDash([]);
+  yData.forEach(d=>{if(d.ra2!=null){x.fillStyle='#b794f6';x.beginPath();x.arc(X(d.i),Y(d.ra2/15),1.8,0,6.3);x.fill();}
+    x.fillStyle='#ffd166';x.beginPath();x.arc(X(d.i),Y(d.sra/15),1.2,0,6.3);x.fill();
+    x.fillStyle='#ff5c7a';x.beginPath();x.arc(X(d.i),Y(d.ra/15),1.8,0,6.3);x.fill();});
+  const cur=Math.max(0,Math.min(n-1,Math.floor((simMs-Date.UTC(yYear,0,1))/86400000)));
+  x.strokeStyle='#fff';x.lineWidth=1.2;x.beginPath();x.moveTo(X(cur),T);x.lineTo(X(cur),H-B);x.stroke();
+}
+function toggleYear(){
+  yearOn=!yearOn;$('year').hidden=!yearOn;yearGroup.visible=yearOn;$('yearBtn').classList.toggle('on',yearOn);
+  if(yearOn){buildYear();setView('orbit');requestAnimationFrame(drawChart);}
+}
+$('yearBtn').onclick=toggleYear;
+$('shapeBtn').onclick=()=>{ORB_K=ORB_K===1?10:1;$('shapeBtn').classList.toggle('on',ORB_K!==1);$('shapeBtn').textContent=ORB_K===1?'Orbit shape true':'Orbit shape ×10';
+  oi=orbitInfo();orbit.geometry.setFromPoints(oi.pts);
+  const p=orbMarkPts.geometry.attributes.position;oi.marks.forEach((m,i)=>p.setXYZ(i,m.pos.x,m.pos.y,m.pos.z));p.needsUpdate=true;
+  if(yearOn){buildYear();drawChart();}};
+$('scaleBtn').onclick=()=>{skyForced=false;setScale(SC===1);if(yearOn){buildYear();}};
+const PLACES=[{n:'Kaaba',lat:21.4225,lon:39.8262,h:277},{n:'Dhaka',lat:23.8103,lon:90.4125,h:8},{n:'New Delhi',lat:28.6139,lon:77.2090,h:216},{n:'Dubai',lat:25.2048,lon:55.2708,h:5},{n:'Moscow',lat:55.7558,lon:37.6173,h:156},{n:'Murmansk',lat:68.9585,lon:33.0827,h:50},{n:'London',lat:51.5074,lon:-0.1278,h:11},{n:'New York',lat:40.7128,lon:-74.0060,h:10},{n:'Quito',lat:-0.1807,lon:-78.4678,h:2850},{n:'Jakarta',lat:-6.2088,lon:106.8456,h:8},{n:'Cape Town',lat:-33.9249,lon:18.4241,h:0}];
+$('place').innerHTML=PLACES.map(p=>`<option>${p.n}</option>`).join('')+'<option value="custom">Custom…</option>';
+$('ycmp').innerHTML='<option value="">None</option>'+PLACES.map(p=>`<option>${p.n}</option>`).join('');
+function setLocation(n,lat,lon,h){
+  PLACE=n;LAT=lat*D2R;LON=lon*D2R;ALT=h||0;
+  localDir.copy(localOf(LAT,LON));surfLocal.copy(surf(LAT,LON,ALT));
+  kaaba.position.copy(surfLocal);beam.position.copy(surfLocal);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),localDir);
+  ringMs=null;
+  $('ptitle').textContent=n+' zenith beam';
+  $('psub').textContent=`${Math.abs(lat).toFixed(4)}° ${lat>=0?'N':'S'}, ${Math.abs(lon).toFixed(4)}° ${lon>=0?'E':'W'}, ${ALT} m · straight up, into space`;
+  document.querySelector('[data-v=sky]').textContent=n+' sky';
+  if(yearOn){buildYear();drawChart();}
+}
+$('place').onchange=e=>{const v=e.target.value;$('cust').hidden=v!=='custom';
+  if(v==='custom'){applyCustom();return;}const p=PLACES.find(q=>q.n===v);$('clat').value=p.lat;$('clon').value=p.lon;setLocation(p.n,p.lat,p.lon,p.h);};
+function applyCustom(){const la=parseFloat($('clat').value),lo=parseFloat($('clon').value);
+  if(isFinite(la)&&isFinite(lo)&&Math.abs(la)<=89.9&&Math.abs(lo)<=180)setLocation('Custom place',la,lo,0);}
+$('clat').onchange=$('clon').onchange=applyCustom;
+$('ycmp').onchange=$('yclock').onchange=$('ytime').onchange=()=>{if(yearOn){buildYear();drawChart();}};
+addEventListener('resize',()=>{if(yearOn)drawChart();});
+
+let prev=performance.now();
+function loop(now){
+  const dt=(now-prev)/1000;prev=now;
+  if(playing){simMs+=dt*speed*1000;syncInput();}
+  frame();
+  if(yearOn){
+    if(new Date(simMs).getUTCFullYear()!==yYear){buildYear();}
+    const day=Math.floor((simMs-Date.UTC(yYear,0,1))/86400000);
+    if(day!==yDay){yDay=day;drawChart();}
+  }
+  renderer.render(scene,camera);requestAnimationFrame(loop);
+}
+function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+function syncInput(){if(document.activeElement!==$('dt'))$('dt').value=new Date(simMs).toISOString().slice(0,16);}
+document.querySelectorAll('#views button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'Pause':'Play';};
+$('speed').onchange=e=>speed=+e.target.value;
+$('dt').onchange=e=>{const t=Date.parse(e.target.value+':00Z');if(!isNaN(t))simMs=t;};
+$('now').onclick=()=>{simMs=Date.now();};
+{const a=astro(simMs);earthPos.copy(epos(a));lastEarth.copy(earthPos);}
+setLocation('Kaaba',21.4225,39.8262,277);
+setView('earth');syncInput();requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
